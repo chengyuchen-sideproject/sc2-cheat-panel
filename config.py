@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 
+import hotkeys as hotkey_rules
 from cheats import CHEATS, DEFAULT_HOTKEYS, by_code
 
 DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -17,6 +18,10 @@ DEFAULTS = {
     "always_on_top": True,
     "input_mode": "unicode",  # or "scancode"; see winput.py
     "key_delay_ms": 15,
+    # Shows the full panel / folds it back into the strip.
+    "panel_hotkey": "Ctrl+Alt+0",
+    # Where the folded strip sits, [x, y] in screen pixels; None = top centre.
+    "strip_position": None,
 }
 
 
@@ -44,6 +49,12 @@ def load(path=DEFAULT_PATH):
     delay = stored.get("key_delay_ms")
     if isinstance(delay, int) and 0 <= delay <= 200:
         settings["key_delay_ms"] = delay
+    panel = stored.get("panel_hotkey")
+    if isinstance(panel, str) and panel and hotkey_rules.problem(panel) is None:
+        settings["panel_hotkey"] = panel
+    position = stored.get("strip_position")
+    if isinstance(position, list) and len(position) == 2 and all(isinstance(value, int) for value in position):
+        settings["strip_position"] = position
     hotkeys = stored.get("hotkeys")
     if isinstance(hotkeys, dict):
         for code, hotkey in hotkeys.items():
@@ -53,6 +64,10 @@ def load(path=DEFAULT_PATH):
             # typed into the file by hand.
             if cheat is not None and not cheat.confirm and isinstance(hotkey, str):
                 settings["hotkeys"][code] = hotkey
+    # The panel's own hotkey wins over a cheat that was given the same one.
+    for code, hotkey in settings["hotkeys"].items():
+        if hotkey_rules.same(hotkey, settings["panel_hotkey"]):
+            settings["hotkeys"][code] = ""
     return settings
 
 

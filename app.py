@@ -22,6 +22,9 @@ WARN_BG = "#FFF4E0"
 
 INPUT_MODES = {"unicode": "不經過輸入法（建議）", "scancode": "模擬實體按鍵（備用）"}
 
+# The hotkey thread's name for the show/hide hotkey; never a cheat code.
+PANEL_KEY = "__panel__"
+
 
 class App:
     def __init__(self, root):
@@ -47,17 +50,40 @@ class App:
 
         self._build_list()
         self._build_footer()
+        self.strip = Strip(self)
 
         self.hotkey_thread = hotkeys.HotkeyThread(
             on_press=lambda code: self.events.put(("hotkey", code)),
             on_failed=lambda failed: self.events.put(("failed", failed)),
         )
         self.hotkey_thread.start()
-        self.hotkey_thread.set_hotkeys(self.settings["hotkeys"])
+        self._register_hotkeys()
 
-        self.set_status("點按鈕，或在遊戲裡按熱鍵。")
+        self.set_status(f"點按鈕，或在遊戲裡按熱鍵。{self.settings['panel_hotkey']} 收起／叫出面板。")
         self._poll_events()
         self._poll_game()
+
+    # --- expanded panel / folded strip ---------------------------------------
+
+    def collapse(self):
+        """Fold into the strip so nothing covers the game."""
+        self.root.withdraw()
+        self.strip.show()
+
+    def expand(self):
+        self.strip.hide()
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes("-topmost", self.settings["always_on_top"])
+
+    def toggle(self):
+        if self.root.state() == "withdrawn":
+            self.expand()
+        else:
+            self.collapse()
+
+    def _register_hotkeys(self):
+        self.hotkey_thread.set_hotkeys({**self.settings["hotkeys"], PANEL_KEY: self.settings["panel_hotkey"]})
 
     # --- layout -------------------------------------------------------------
 
@@ -129,6 +155,8 @@ class App:
     def on_click(self, cheat):
         if cheat.confirm and not messagebox.askyesno("確定嗎？", f"「{cheat.name}」：{cheat.effect}\n\n確定要送出嗎？"):
             return
+        # Out of the way before the game comes back to the front.
+        self.collapse()
         threading.Thread(target=self.send, args=(cheat, False), daemon=True).start()
 
     def send(self, cheat, from_hotkey):
@@ -155,7 +183,10 @@ class App:
                     return
             events = winput.build_sequence(cheat.code, self.settings["input_mode"])
             winput.play(events, key_delay=self.settings["key_delay_ms"] / 1000)
-            self.events.put(("status", f"已送出：{cheat.name}（{cheat.code}）"))
+            done = f"已送出：{cheat.name}（{cheat.code}）"
+            if self.settings["input_mode"] == "scancode" and not winput.keyboard_is_english():
+                done += "。目前是中文輸入法，「模擬實體按鍵」可能被輸入法吃掉；沒生效就先切成英文，或改回「不經過輸入法」。"
+            self.events.put(("status", done))
         except OSError:
             self.events.put((
                 "status",
@@ -176,7 +207,7 @@ class App:
         self.settings["hotkeys"][code] = hotkey
         self._show_hotkey(code)
         config.save(self.settings)
-        self.hotkey_thread.set_hotkeys(self.settings["hotkeys"])
+        self._register_hotkeys()
 
     def toggle_topmost(self):
         self.settings["always_on_top"] = self.topmost.get()
@@ -204,6 +235,8 @@ class App:
                 kind, value = self.events.get_nowait()
                 if kind == "status":
                     self.set_status(value)
+                elif kind == "hotkey" and value == PANEL_KEY:
+                    self.toggle()
                 elif kind == "hotkey":
                     cheat = by_code(value)
                     if cheat is not None and not cheat.confirm:
@@ -220,6 +253,85 @@ class App:
         else:
             self.game_status.configure(text="⚪ 還沒偵測到星海2（進入遊戲後就能用）", fg=MUTED)
         self.root.after(2000, self._poll_game)
+
+
+class Strip:
+    """The panel folded away: a small bar, always on top, that expands on a
+    click. Frameless so it stays small; dragged to wherever it is out of the
+    way, and remembered there. Right-click for the menu (expand, quit)."""
+
+    DRAG_THRESHOLD = 4  # pixels; less than this is a click, not a drag
+
+    def __init__(self, app):
+        self.app = app
+        self.window = tk.Toplevel(app.root)
+        self.window.withdraw()
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.attributes("-alpha", 0.85)
+        label = tk.Label(
+            self.window, text=f"⚡ 星海2 密技　{app.settings['panel_hotkey']}", font=FONT_SMALL,
+            bg="#20242C", fg="#F2F2F2", cursor="fleur", padx=10, pady=3,
+        )
+        label.pack(fill="both", expand=True)
+        label.bind("<ButtonPress-1>", self._press)
+        label.bind("<B1-Motion>", self._drag)
+        label.bind("<ButtonRelease-1>", self._release)
+        menu = tk.Menu(self.window, tearoff=False)
+        menu.add_command(label="展開面板", command=app.expand)
+        menu.add_command(label="結束", command=app.close)
+        label.bind("<Button-3>", lambda event: menu.tk_popup(event.x_root, event.y_root))
+        self._start = None
+        self._moved = False
+
+    def show(self):
+        # Sized by its text, not a fixed width: at 150% display scaling the
+        # font grows and a fixed box cut the hotkey off.
+        self.window.update_idletasks()
+        self.width = max(self.window.winfo_reqwidth(), 120)
+        self.height = max(self.window.winfo_reqheight(), 24)
+        x, y = self._position()
+        self.window.geometry(f"{self.width}x{self.height}+{x}+{y}")
+        self.window.deiconify()
+        self.window.lift()
+
+    def hide(self):
+        self.window.withdraw()
+
+    def _position(self):
+        """The saved spot, or top centre — kept on screen if the resolution
+        shrank since it was saved."""
+        screen_w = self.window.winfo_screenwidth()
+        screen_h = self.window.winfo_screenheight()
+        saved = self.app.settings.get("strip_position")
+        x, y = saved if saved else ((screen_w - self.width) // 2, 0)
+        return clamp_to_screen(x, y, self.width, self.height, screen_w, screen_h)
+
+    def _press(self, event):
+        self._start = (event.x_root, event.y_root, self.window.winfo_x(), self.window.winfo_y())
+        self._moved = False
+
+    def _drag(self, event):
+        if self._start is None:
+            return
+        start_x, start_y, window_x, window_y = self._start
+        dx, dy = event.x_root - start_x, event.y_root - start_y
+        if abs(dx) + abs(dy) >= self.DRAG_THRESHOLD:
+            self._moved = True
+        if self._moved:
+            self.window.geometry(f"+{window_x + dx}+{window_y + dy}")
+
+    def _release(self, _event):
+        if self._moved:
+            self.app.settings["strip_position"] = [self.window.winfo_x(), self.window.winfo_y()]
+            config.save(self.app.settings)
+        else:
+            self.app.expand()
+        self._start = None
+
+
+def clamp_to_screen(x, y, width, height, screen_w, screen_h):
+    return max(0, min(x, screen_w - width)), max(0, min(y, screen_h - height))
 
 
 class HotkeyDialog:
@@ -264,6 +376,8 @@ class HotkeyDialog:
     def confirm(self):
         hotkey = hotkeys.format_hotkey([name for name, var in self.mods.items() if var.get()], self.key.get())
         issue = hotkeys.problem(hotkey)
+        if not issue and hotkeys.same(hotkey, self.app.settings["panel_hotkey"]):
+            issue = f"{hotkey} 是收起／叫出面板用的，換一組吧。"
         if issue:
             messagebox.showwarning("這組不行", issue, parent=self.window)
             return

@@ -180,6 +180,20 @@ if sys.platform == "win32":
         time.sleep(AFTER_ACTIVATE_DELAY)
         return game_is_foreground()
 
+    user32.GetKeyboardLayout.argtypes = (wintypes.DWORD,)
+    user32.GetKeyboardLayout.restype = wintypes.HKL
+
+    def keyboard_is_english(hwnd=None):
+        """Is the window's keyboard layout an English one? Physical key presses
+        (scan-code mode) go through the IME, and under Zhuyin they compose
+        bopomofo instead of typing letters. Measured: layout 0x0404 (zh-TW)
+        swallowed every key. A Chinese IME switched to its own English mode
+        still reports 0x0404, so False means "may not work", not "will not"."""
+        hwnd = hwnd or user32.GetForegroundWindow()
+        thread = user32.GetWindowThreadProcessId(hwnd, None)
+        layout = user32.GetKeyboardLayout(thread) or 0
+        return (int(layout) & 0x3FF) == 0x09  # primary language: LANG_ENGLISH
+
     def modifiers_down():
         return any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in MODIFIER_VKS)
 

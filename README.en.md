@@ -26,7 +26,8 @@ Playing the StarCraft II campaign the easy way: click a button, or press a hotke
 3. Either:
    - **Hotkey**: press it in game, e.g. `Ctrl+Alt+1` for god mode. The tool waits until Ctrl/Alt are released before typing.
    - **Button**: the tool switches to the game, presses Enter, types the code, presses Enter.
-4. Click the `Ctrl+Alt+1` / 「＋設定熱鍵」 label beside a cheat to change its hotkey. At least two modifiers are required, because the game uses `Ctrl+<n>` for control groups and `Shift+<n>` to add to them.
+4. **The panel stays out of the way**: `Ctrl+Alt+0` folds it into a small semi-transparent strip at the top centre of the screen; press it again, or click the strip, to expand. Clicking a cheat on the panel folds it too. Drag the strip anywhere — its position is remembered; right-click it for 「展開面板」 (expand) and 「結束」 (quit).
+5. Click the `Ctrl+Alt+1` / 「＋設定熱鍵」 label beside a cheat to change its hotkey. At least two modifiers are required, because the game uses `Ctrl+<n>` for control groups and `Shift+<n>` to add to them.
 
 ### Default hotkeys
 
@@ -47,7 +48,7 @@ The other 18 are one click away and can be given hotkeys. Instant defeat (`LetsJ
 ## Safety
 
 - **Types into StarCraft II only**: for a hotkey, if the foreground window is not the game (say you are typing in a chat app), nothing is sent. The game is recognised by the process behind the window (`SC2_x64.exe`), not the title, so the Battle.net launcher and the map editor are never typed into.
-- **Bypasses the input method**: characters are sent as Unicode by default, so a Zhuyin/Pinyin IME left on cannot turn a code into bopomofo. If the game ever ignores that, switch 「輸入方式」 to 「模擬實體按鍵」 (physical keys — affected by the IME, so switch it to English first).
+- **Bypasses the input method**: characters are sent as Unicode by default, so a Zhuyin/Pinyin IME left on cannot turn a code into bopomofo. If the game ever ignores that, switch 「輸入方式」 to 「模擬實體按鍵」 (physical keys). **Measured: under a Zhuyin IME (layout `0x0404`) that mode types nothing at all**, so switch the IME to English first; the panel reminds you when it sees a Chinese layout in that mode.
 - **No automation**: the tool enters official cheat codes and nothing else — no auto-macro, no auto-casting.
 
 ## Achievements without cheats
@@ -72,7 +73,7 @@ The other 18 are one click away and can be given hotkeys. Instant defeat (`LetsJ
 
 ## Settings and undo
 
-- Settings live in `settings.json` beside the program (hotkeys, always-on-top, input mode). **Delete it to return to defaults.**
+- Settings live in `settings.json` beside the program (hotkeys, always-on-top, input mode, strip position, and `panel_hotkey` for folding the panel). **Delete it to return to defaults.**
 - A broken settings file is renamed `settings.json.bad` and the program starts with defaults instead of failing to open.
 - Nothing else is changed: no system settings, no registry, no game files. Closing the panel releases every hotkey.
 

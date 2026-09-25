@@ -118,6 +118,25 @@ class SettingsFile(unittest.TestCase):
         self.assertEqual(settings["key_delay_ms"], 15)
         self.assertNotIn("NotACheat", settings["hotkeys"])
 
+    def test_panel_hotkey_and_strip_position(self):
+        settings = config.load(self.path)
+        self.assertEqual(settings["panel_hotkey"], "Ctrl+Alt+0")
+        self.assertIsNone(settings["strip_position"])
+        with open(self.path, "w", encoding="utf-8") as handle:
+            json.dump({"panel_hotkey": "Ctrl+0", "strip_position": [100, "x"]}, handle)
+        settings = config.load(self.path)
+        self.assertEqual(settings["panel_hotkey"], "Ctrl+Alt+0", "one modifier is refused, like any hotkey")
+        self.assertIsNone(settings["strip_position"])
+        with open(self.path, "w", encoding="utf-8") as handle:
+            json.dump({"panel_hotkey": "Ctrl+Shift+F9", "strip_position": [100, 40]}, handle)
+        settings = config.load(self.path)
+        self.assertEqual((settings["panel_hotkey"], settings["strip_position"]), ("Ctrl+Shift+F9", [100, 40]))
+
+    def test_a_cheat_on_the_panel_hotkey_loses_it(self):
+        with open(self.path, "w", encoding="utf-8") as handle:
+            json.dump({"hotkeys": {"SpectralTiger": "Alt+Ctrl+0"}}, handle)
+        self.assertEqual(config.load(self.path)["hotkeys"]["SpectralTiger"], "")
+
     def test_click_only_cheat_never_gets_a_hotkey_from_the_file(self):
         with open(self.path, "w", encoding="utf-8") as handle:
             json.dump({"hotkeys": {"LetsJustBugOutAndCallItEven": "Ctrl+Alt+9"}}, handle)
@@ -149,6 +168,15 @@ class KeySequence(unittest.TestCase):
     def test_unknown_mode_refused(self):
         with self.assertRaises(ValueError):
             winput.build_sequence("x", "morse")
+
+
+class StripPlacement(unittest.TestCase):
+    def test_strip_stays_on_screen(self):
+        import app
+
+        self.assertEqual(app.clamp_to_screen(100, 50, 190, 28, 1920, 1080), (100, 50))
+        self.assertEqual(app.clamp_to_screen(3000, 2000, 190, 28, 1920, 1080), (1730, 1052))
+        self.assertEqual(app.clamp_to_screen(-40, -5, 190, 28, 1920, 1080), (0, 0))
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows only")
