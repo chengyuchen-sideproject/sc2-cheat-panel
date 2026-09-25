@@ -137,6 +137,16 @@ class SettingsFile(unittest.TestCase):
             json.dump({"hotkeys": {"SpectralTiger": "Alt+Ctrl+0"}}, handle)
         self.assertEqual(config.load(self.path)["hotkeys"]["SpectralTiger"], "")
 
+    def test_achievement_mode_off_by_default_and_remembered(self):
+        self.assertFalse(config.load(self.path)["achievement_mode"])
+        settings = config.defaults()
+        settings["achievement_mode"] = True
+        config.save(settings, self.path)
+        self.assertTrue(config.load(self.path)["achievement_mode"])
+        with open(self.path, "w", encoding="utf-8") as handle:
+            json.dump({"achievement_mode": "yes"}, handle)
+        self.assertFalse(config.load(self.path)["achievement_mode"], "only a real true/false counts")
+
     def test_click_only_cheat_never_gets_a_hotkey_from_the_file(self):
         with open(self.path, "w", encoding="utf-8") as handle:
             json.dump({"hotkeys": {"LetsJustBugOutAndCallItEven": "Ctrl+Alt+9"}}, handle)
@@ -168,6 +178,26 @@ class KeySequence(unittest.TestCase):
     def test_unknown_mode_refused(self):
         with self.assertRaises(ValueError):
             winput.build_sequence("x", "morse")
+
+
+class MissionList(unittest.TestCase):
+    def test_3_prologue_19_main_3_epilogue_all_distinct(self):
+        import missions
+
+        counts = [len(missions.in_part(part)) for part in missions.PARTS]
+        self.assertEqual(counts, [3, 19, 3])
+        self.assertEqual(len({mission.name for mission in missions.MISSIONS}), 25)
+
+    def test_links_are_encoded(self):
+        import missions
+
+        rakshir = next(mission for mission in missions.MISSIONS if mission.name == "Rak'Shir")
+        for url in (missions.video_url(rakshir), missions.wiki_url(rakshir), missions.chinese_url(rakshir)):
+            self.assertTrue(url.startswith("https://"), url)
+            self.assertNotIn(" ", url)
+            self.assertNotIn("'", url)
+        self.assertIn("brutal", missions.video_url(rakshir))
+        self.assertIn("%E6%AE%98%E9%85%B7", missions.chinese_url(rakshir))  # 殘酷
 
 
 class StripPlacement(unittest.TestCase):

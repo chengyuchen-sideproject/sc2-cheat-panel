@@ -51,9 +51,30 @@ The other 18 are one click away and can be given hotkeys. Instant defeat (`LetsJ
 - **Bypasses the input method**: characters are sent as Unicode by default, so a Zhuyin/Pinyin IME left on cannot turn a code into bopomofo. If the game ever ignores that, switch 「輸入方式」 to 「模擬實體按鍵」 (physical keys). **Measured: under a Zhuyin IME (layout `0x0404`) that mode types nothing at all**, so switch the IME to English first; the panel reminds you when it sees a Chinese layout in that mode.
 - **No automation**: the tool enters official cheat codes and nothing else — no auto-macro, no auto-casting.
 
+## 🏆 Achievement mode (turn it on for an achievement run)
+
+Tick 「🏆 成就模式」 at the bottom of the panel:
+- Every cheat button is disabled and **every cheat hotkey is unregistered** — not ignored, released back to the game — so a stray key cannot send a cheat.
+- The strip turns green and reads 「🏆 成就模式」, so a glance tells you it is safe.
+- `Ctrl+Alt+0` keeps folding and showing the panel.
+- Turning it off asks first; the setting is remembered across restarts.
+
+⚠️ It only prevents accidents **from now on**. A campaign save that already used a cheat still earns nothing — load a save from before the first cheat, or start a new campaign.
+
+## 📖 Legacy of the Void guide tab
+
+The 「虛空之遺攻略」 tab lists all 25 missions (3 prologue, 19 main, 3 epilogue; names and order from the StarCraft Wiki mission tree), each with three links:
+- **影片 (video)**: a YouTube search for a Brutal run of that mission.
+- **Liquipedia**: jumps to the mission's page.
+- **中文攻略**: a search for Chinese-language guides.
+
+The Chinese mission names are this project's translations, not the in-game ones; searches use the English names.
+
+**How Legacy of the Void achievements count** (per a strategy site; the in-game achievement page is the authority): the Brutal completion achievements are for 5 / 10 / 15 / 19 main-campaign missions, prologue and epilogue excluded; most mission-challenge achievements only need Hard or above. Take the challenges on Hard, then do the Brutal clear on its own.
+
 ## Achievements without cheats
 
-- **Slow the game down**: single-player allows a slower game speed (Options → Gameplay). Whether speed affects an achievement, the game will tell you.
+- **Game speed (corrected)**: Normal and Hard can be slowed down, but **Brutal is fixed at Faster** in every campaign (Blizzard forum summary, 2020-08). Brutal is won with the tactics below, not by slowing it down.
 - **Save mid-mission** before a big wave; reload that wave instead of the whole mission.
 - **Read the mission first**: Liquipedia and similar sites cover each mission on Brutal — where attacks come from, when the big waves hit.
 - **Split the goals**: take the mission-challenge achievements on a lower difficulty, then go for the Brutal clear on its own.
@@ -64,12 +85,13 @@ The other 18 are one click away and can be given hotkeys. Instant defeat (`LetsJ
 |---|---|
 | `app.py` | The panel |
 | `cheats.py` | Cheat list and descriptions (sources at the top of the file) |
+| `missions.py` | The 25 Legacy of the Void missions and guide search links |
 | `winput.py` | Finding and activating the game window, sending keys (Windows API via ctypes) |
 | `hotkeys.py` | Global hotkeys (background thread) and hotkey rules |
 | `config.py` | Reading and writing `settings.json` |
 | `Run.bat` | Launcher without a console window |
 | `tests/` | Unit tests: `python -m unittest discover -s tests` |
-| `scripts/selftest.py` | Hands-on check without the game: really types into a text box and really fires a hotkey (takes focus for a few seconds) |
+| `scripts/selftest.py` | Hands-on check without the game (20 checks): really types, really fires hotkeys, folds the strip, proves achievement mode releases the hotkeys. Uses a scratch settings file, never your `settings.json` (takes focus for a few seconds) |
 
 ## Settings and undo
 

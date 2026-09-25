@@ -7,10 +7,12 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox, ttk
 
 import config
 import hotkeys
+import missions
 import winput
 from cheats import ACHIEVEMENT_WARNING, CATEGORIES, by_code, in_category
 
@@ -19,6 +21,9 @@ FONT_SMALL = ("Microsoft JhengHei UI", 9)
 FONT_BOLD = ("Microsoft JhengHei UI", 10, "bold")
 MUTED = "#6B6B6B"
 WARN_BG = "#FFF4E0"
+SAFE_BG = "#E6F4EA"
+SAFE_FG = "#1A7F37"
+LINK = "#1E6FD9"
 
 INPUT_MODES = {"unicode": "不經過輸入法（建議）", "scancode": "模擬實體按鍵（備用）"}
 
@@ -33,6 +38,7 @@ class App:
         self.events = queue.Queue()
         self.sending = threading.Lock()
         self.hotkey_labels = {}
+        self.cheat_buttons = []
 
         root.title("星海2 密技面板")
         root.geometry("460x680")
@@ -42,15 +48,24 @@ class App:
 
         self.game_status = tk.Label(root, font=FONT_BOLD, anchor="w", padx=10, pady=6)
         self.game_status.pack(fill="x")
-        tk.Label(
-            # No space after the sign: the wrap would break there and leave it alone on a line.
-            root, text=f"⚠{ACHIEVEMENT_WARNING}", font=FONT_SMALL, bg=WARN_BG, anchor="w",
-            justify="left", wraplength=430, padx=10, pady=6,
-        ).pack(fill="x")
 
-        self._build_list()
+        tabs = ttk.Notebook(root)
+        tabs.pack(fill="both", expand=True)
+        cheats_tab = tk.Frame(tabs)
+        guide_tab = tk.Frame(tabs)
+        tabs.add(cheats_tab, text="密技")
+        tabs.add(guide_tab, text="虛空之遺攻略")
+
+        # One banner, two faces: the warning while cheats are live, the
+        # all-clear in achievement mode. No space after the sign: the wrap
+        # would break there and leave it alone on a line.
+        self.banner = tk.Label(cheats_tab, font=FONT_SMALL, anchor="w", justify="left", wraplength=430, padx=10, pady=6)
+        self.banner.pack(fill="x")
+        self._build_list(cheats_tab)
+        self._build_guide(guide_tab)
         self._build_footer()
         self.strip = Strip(self)
+        self._show_achievement_mode()
 
         self.hotkey_thread = hotkeys.HotkeyThread(
             on_press=lambda code: self.events.put(("hotkey", code)),
@@ -83,12 +98,50 @@ class App:
             self.collapse()
 
     def _register_hotkeys(self):
-        self.hotkey_thread.set_hotkeys({**self.settings["hotkeys"], PANEL_KEY: self.settings["panel_hotkey"]})
+        """In achievement mode only the panel's own hotkey stays registered: a
+        cheat hotkey pressed by accident would cost the whole campaign save its
+        achievements, so the keys are released, not merely ignored."""
+        cheats_keys = {} if self.settings["achievement_mode"] else self.settings["hotkeys"]
+        self.hotkey_thread.set_hotkeys({**cheats_keys, PANEL_KEY: self.settings["panel_hotkey"]})
+
+    # --- achievement mode -----------------------------------------------------
+
+    def set_achievement_mode(self, on):
+        if not on and self.settings["achievement_mode"] and not messagebox.askyesno(
+            "關掉成就模式？",
+            "關掉之後熱鍵會重新生效，一按到就會送出密技，這份劇情存檔就拿不到成就了。\n\n確定要關掉嗎？",
+        ):
+            self.achievement.set(True)
+            return
+        self.settings["achievement_mode"] = on
+        # The checkbox follows whatever route switched it, not only its own click.
+        self.achievement.set(on)
+        config.save(self.settings)
+        self._register_hotkeys()
+        self._show_achievement_mode()
+        self.set_status("🏆 成就模式開著：密技按鈕和熱鍵都停用了。" if on else "成就模式已關閉，密技可以用了。")
+
+    def _show_achievement_mode(self):
+        on = self.settings["achievement_mode"]
+        state = "disabled" if on else "normal"
+        for button in self.cheat_buttons:
+            button.configure(state=state)
+        for label in self.hotkey_labels.values():
+            label.configure(fg=MUTED if on else LINK, cursor="arrow" if on else "hand2")
+        if on:
+            self.banner.configure(
+                text="🏆 成就模式：密技按鈕和熱鍵全部停用，不會誤觸。要用密技請先在下面關掉。", bg=SAFE_BG, fg=SAFE_FG,
+            )
+        else:
+            self.banner.configure(text=f"⚠{ACHIEVEMENT_WARNING}", bg=WARN_BG, fg="black")
+        self.strip.set_mode(on)
 
     # --- layout -------------------------------------------------------------
 
-    def _build_list(self):
-        outer = tk.Frame(self.root)
+    def _scrollable(self, parent):
+        """A vertically scrolling frame. The wheel scrolls whichever list the
+        pointer is over — there are two, one per tab."""
+        outer = tk.Frame(parent)
         outer.pack(fill="both", expand=True)
         canvas = tk.Canvas(outer, highlightthickness=0)
         bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
@@ -99,8 +152,12 @@ class App:
         canvas.configure(yscrollcommand=bar.set)
         canvas.pack(side="left", fill="both", expand=True)
         bar.pack(side="right", fill="y")
-        self.root.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"))
+        scroll = lambda event: canvas.yview_scroll(int(-event.delta / 120), "units")  # noqa: E731
+        outer.bind("<Enter>", lambda _: self.root.bind_all("<MouseWheel>", scroll))
+        return inner
 
+    def _build_list(self, parent):
+        inner = self._scrollable(parent)
         for category in CATEGORIES:
             tk.Label(inner, text=category, font=FONT_BOLD, anchor="w", padx=10, pady=(4)).pack(fill="x", pady=(8, 0))
             for cheat in in_category(category):
@@ -110,9 +167,9 @@ class App:
         row = tk.Frame(parent, padx=10, pady=3)
         row.pack(fill="x")
         row.columnconfigure(1, weight=1)
-        tk.Button(row, text=cheat.name, font=FONT, width=14, command=lambda: self.on_click(cheat)).grid(
-            row=0, column=0, rowspan=2, sticky="nw"
-        )
+        button = tk.Button(row, text=cheat.name, font=FONT, width=14, command=lambda: self.on_click(cheat))
+        button.grid(row=0, column=0, rowspan=2, sticky="nw")
+        self.cheat_buttons.append(button)
         tk.Label(row, text=cheat.effect, font=FONT_SMALL, anchor="w", justify="left", wraplength=230).grid(
             row=0, column=1, sticky="w", padx=8
         )
@@ -123,13 +180,45 @@ class App:
             # to ask that question over the game, which it cannot.
             tk.Label(row, text="只能用點的", font=FONT_SMALL, fg=MUTED).grid(row=0, column=2, sticky="ne")
             return
-        label = tk.Label(row, font=FONT_SMALL, fg="#1E6FD9", cursor="hand2")
+        label = tk.Label(row, font=FONT_SMALL, fg=LINK, cursor="hand2")
         label.grid(row=0, column=2, sticky="ne")
         label.bind("<Button-1>", lambda _: self.edit_hotkey(cheat))
         self.hotkey_labels[cheat.code] = label
         self._show_hotkey(cheat.code)
 
+    def _build_guide(self, parent):
+        """Every Legacy of the Void mission, each with links to Brutal guides."""
+        tk.Label(
+            parent, font=FONT_SMALL, anchor="w", justify="left", wraplength=430, padx=10, pady=6, bg="#EEF3FB",
+            text="點關卡的連結，會用瀏覽器搜尋那一關的殘酷打法。殘酷固定「較快」速度不能調慢；大波進攻前記得存檔。"
+                 "\n中文是本工具的意譯，不是遊戲內官方譯名；搜尋用英文原名。",
+        ).pack(fill="x")
+        inner = self._scrollable(parent)
+        for part in missions.PARTS:
+            tk.Label(inner, text=part, font=FONT_BOLD, anchor="w", padx=10).pack(fill="x", pady=(8, 0))
+            for number, mission in enumerate(missions.in_part(part), start=1):
+                row = tk.Frame(inner, padx=10, pady=2)
+                row.pack(fill="x")
+                row.columnconfigure(0, weight=1)
+                tk.Label(row, text=f"{number}. {mission.name}", font=FONT, anchor="w").grid(row=0, column=0, sticky="w")
+                tk.Label(row, text=mission.gloss, font=FONT_SMALL, fg=MUTED, anchor="w").grid(row=1, column=0, sticky="w")
+                for column, (text, url) in enumerate(
+                    [("影片", missions.video_url(mission)), ("Liquipedia", missions.wiki_url(mission)),
+                     ("中文攻略", missions.chinese_url(mission))],
+                    start=1,
+                ):
+                    link = tk.Label(row, text=text, font=FONT_SMALL, fg=LINK, cursor="hand2", padx=4)
+                    link.grid(row=0, column=column, rowspan=2)
+                    link.bind("<Button-1>", lambda _, url=url: webbrowser.open(url))
+
     def _build_footer(self):
+        safety = tk.Frame(self.root, padx=10, pady=(4))
+        safety.pack(fill="x")
+        self.achievement = tk.BooleanVar(value=self.settings["achievement_mode"])
+        tk.Checkbutton(
+            safety, text="🏆 成就模式（停用所有密技，避免誤觸）", font=FONT_BOLD, variable=self.achievement,
+            command=lambda: self.set_achievement_mode(self.achievement.get()),
+        ).pack(side="left")
         footer = tk.Frame(self.root, padx=10, pady=6)
         footer.pack(fill="x")
         self.topmost = tk.BooleanVar(value=self.settings["always_on_top"])
@@ -153,6 +242,8 @@ class App:
     # --- actions ------------------------------------------------------------
 
     def on_click(self, cheat):
+        if self.settings["achievement_mode"]:
+            return
         if cheat.confirm and not messagebox.askyesno("確定嗎？", f"「{cheat.name}」：{cheat.effect}\n\n確定要送出嗎？"):
             return
         # Out of the way before the game comes back to the front.
@@ -161,6 +252,11 @@ class App:
 
     def send(self, cheat, from_hotkey):
         """Runs off the UI thread: activating the game and typing take a moment."""
+        # The last line of defence: nothing is typed in achievement mode, by
+        # whatever route a request got here.
+        if self.settings["achievement_mode"]:
+            self.events.put(("status", "🏆 成就模式開著，沒有送出密技。"))
+            return
         if not self.sending.acquire(blocking=False):
             self.events.put(("status", "上一個密技還在輸入中，請稍等。"))
             return
@@ -196,6 +292,8 @@ class App:
             self.sending.release()
 
     def edit_hotkey(self, cheat):
+        if self.settings["achievement_mode"]:
+            return
         HotkeyDialog(self, cheat)
 
     def apply_hotkey(self, code, hotkey):
@@ -269,11 +367,9 @@ class Strip:
         self.window.overrideredirect(True)
         self.window.attributes("-topmost", True)
         self.window.attributes("-alpha", 0.85)
-        label = tk.Label(
-            self.window, text=f"⚡ 星海2 密技　{app.settings['panel_hotkey']}", font=FONT_SMALL,
-            bg="#20242C", fg="#F2F2F2", cursor="fleur", padx=10, pady=3,
-        )
+        label = tk.Label(self.window, font=FONT_SMALL, cursor="fleur", padx=10, pady=3)
         label.pack(fill="both", expand=True)
+        self.label = label
         label.bind("<ButtonPress-1>", self._press)
         label.bind("<B1-Motion>", self._drag)
         label.bind("<ButtonRelease-1>", self._release)
@@ -283,6 +379,17 @@ class Strip:
         label.bind("<Button-3>", lambda event: menu.tk_popup(event.x_root, event.y_root))
         self._start = None
         self._moved = False
+
+    def set_mode(self, achievement):
+        """The strip says which mode is on, so a glance at the corner of the
+        screen answers 「can I press anything by accident right now?」."""
+        hotkey = self.app.settings["panel_hotkey"]
+        if achievement:
+            self.label.configure(text=f"🏆 成就模式　{hotkey}", bg=SAFE_FG, fg="white")
+        else:
+            self.label.configure(text=f"⚡ 星海2 密技　{hotkey}", bg="#20242C", fg="#F2F2F2")
+        if self.window.state() == "normal":
+            self.show()  # the text changed width
 
     def show(self):
         # Sized by its text, not a fixed width: at 150% display scaling the

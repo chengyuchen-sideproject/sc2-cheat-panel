@@ -76,12 +76,18 @@ def pump(root, seconds):
 def panel_round(root, entry):
     """The real panel: a hotkey pressed while another window has focus must
     type nothing there, and a click with no game running must say so."""
+    import tempfile
+
     import app as panel
+    import config
     from cheats import by_code
 
     if winput.find_game_window():
         print("SKIP  panel safety checks (StarCraft II is running)")
         return
+    # A scratch settings file: this test flips switches and must not leave
+    # them flipped in the player's own settings.json.
+    config.DEFAULT_PATH = os.path.join(tempfile.mkdtemp(), "settings.json")
     window = tk.Toplevel(root)
     instance = panel.App(window)
     pump(root, 1.0)
@@ -116,8 +122,44 @@ def panel_round(root, entry):
     check(window.state() == "withdrawn", "clicking a cheat folds the panel away")
     instance.expand()
     pump(root, 0.2)
+
+    achievement_round(root, instance, panel, by_code, press_panel)
     instance.hotkey_thread.stop()
     window.destroy()
+
+
+def ctrl_alt_1_is_free():
+    """Can this process register Ctrl+Alt+1? False while the panel holds it."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    if user32.RegisterHotKey(None, 999, hotkeys.MOD_CONTROL | hotkeys.MOD_ALT, 0x31):
+        user32.UnregisterHotKey(None, 999)
+        return True
+    return False
+
+
+def achievement_round(root, instance, panel, by_code, press_panel):
+    check(not ctrl_alt_1_is_free(), "cheats live: the panel holds Ctrl+Alt+1")
+
+    instance.set_achievement_mode(True)
+    pump(root, 0.5)
+    check(ctrl_alt_1_is_free(), "achievement mode releases Ctrl+Alt+1 (not just ignores it)")
+    check(all(button.cget("state") == "disabled" for button in instance.cheat_buttons), "every cheat button disabled")
+    check(instance.achievement.get() is True, "the checkbox shows it is on")
+    instance.send(by_code("TerribleTerribleDamage"), True)
+    pump(root, 0.2)
+    check("成就模式" in instance.status.cget("text"), "a send attempt is refused", instance.status.cget("text"))
+    check("成就模式" in instance.strip.label.cget("text"), "the strip shows achievement mode")
+    winput._send(press_panel)
+    pump(root, 0.6)
+    check(instance.root.state() == "withdrawn", "Ctrl+Alt+0 still works in achievement mode")
+    instance.expand()
+
+    panel.messagebox.askyesno = lambda *args, **kwargs: True  # the "turn it off?" question
+    instance.set_achievement_mode(False)
+    pump(root, 0.5)
+    check(not ctrl_alt_1_is_free(), "turning it off takes Ctrl+Alt+1 back")
 
 
 def main():

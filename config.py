@@ -22,6 +22,9 @@ DEFAULTS = {
     "panel_hotkey": "Ctrl+Alt+0",
     # Where the folded strip sits, [x, y] in screen pixels; None = top centre.
     "strip_position": None,
+    # Every cheat disabled and its hotkey released, so an achievement run
+    # cannot be spoiled by a stray key. Remembered across restarts.
+    "achievement_mode": False,
 }
 
 
@@ -29,7 +32,10 @@ def defaults():
     return {**DEFAULTS, "hotkeys": {cheat.code: DEFAULT_HOTKEYS.get(cheat.code, "") for cheat in CHEATS}}
 
 
-def load(path=DEFAULT_PATH):
+def load(path=None):
+    # Looked up at call time, so the self-test can point it at a scratch file
+    # and never touch the player's real settings.
+    path = path or DEFAULT_PATH
     settings = defaults()
     if not os.path.exists(path):
         return settings
@@ -42,8 +48,9 @@ def load(path=DEFAULT_PATH):
         shutil.copyfile(path, path + ".bad")
         return settings
 
-    if isinstance(stored.get("always_on_top"), bool):
-        settings["always_on_top"] = stored["always_on_top"]
+    for key in ("always_on_top", "achievement_mode"):
+        if isinstance(stored.get(key), bool):
+            settings[key] = stored[key]
     if stored.get("input_mode") in ("unicode", "scancode"):
         settings["input_mode"] = stored["input_mode"]
     delay = stored.get("key_delay_ms")
@@ -71,9 +78,10 @@ def load(path=DEFAULT_PATH):
     return settings
 
 
-def save(settings, path=DEFAULT_PATH):
+def save(settings, path=None):
     """Written to a temporary file first, so a crash mid-write cannot leave
     half a settings file behind."""
+    path = path or DEFAULT_PATH
     temporary = path + ".tmp"
     with open(temporary, "w", encoding="utf-8") as handle:
         json.dump(settings, handle, ensure_ascii=False, indent=2)
